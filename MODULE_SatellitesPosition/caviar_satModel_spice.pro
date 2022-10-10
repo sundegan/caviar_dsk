@@ -10,7 +10,7 @@
 ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
-  print
+  	print
 	print, '-----------------caviar_satModel_spice_getPoints--------------------'
 	; Get CSPICE ellipsoid as viewed from the spacecraft:
 	; For limb, rhoi vector ~ sat->spc
@@ -228,6 +228,162 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   RETURN, model
 END
 
+
+;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; NAME: caviar_satModel_spice_dsk_getLimbPoints, @孙德淦，2022.10.10
+; PURPOSE: 使用目标星体的DSK模型寻找从航天器看到的边缘点,返回边缘点的ra/dec坐标和sample/line坐标
+; INPUT:
+;     - satID：目标星体ID
+;     - spcID：航天器ID
+;     - n_points：模型边缘点数量
+;     - et： 星历表时间,表示航天器观测星体的时间
+; OUTPUT:返回目标星体DSK模型边缘点的ra/dec坐标（毫弧）和sample/line坐标
+;     - {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+;---------------------------------------------------------------------------------------------------
+FUNCTION caviar_satModel_spice_dsk_getLimbPoints, spcID, satID, n_points, et
+	; 设置cspice_limbpt函数的参数
+	MAXN = n_points	; 可以存储的最大边缘点个数
+	method = 'TANGENT/DSK/UNPRIORITIZED'
+	z = [ 0.D, 0.0, 1.0 ]
+
+	str_spcID = string(spcID)
+	str_satID = string(satID)
+	obsrvr = strtrim(str_spcID)
+	target = strtrim(str_satID)
+	print, 'spc_ID = ', obsrvr
+	print, 'sat_ID = ', target
+
+	; fixref的名称格式为:IAU_body name,例如:火卫一,IAU_PHOBOS; 土卫九,IAU_PHOEBE
+	cspice_bodc2n, satID, sat_name, found
+  	if found then begin
+		print, 'sat_name = ', sat_name
+  	endif
+	fixref = 'IAU_' + sat_name
+	; cspice_namfrm将参考系名称转换为对应的参考系ID
+	cspice_namfrm, fixref, fixref_id
+	print, 'fixref = ', fixref
+	print, 'fixref_id = ', fixref_id
+
+	abcorr = 'CN+S'
+	corloc = 'CENTER'
+	schstp = 1.0d-4	    ; 搜索角度步长,100微弧
+	soltol = 1.0d-7	    ; 收敛角度,100纳弧
+	ncuts  = n_points		; 切割半平面的个数
+	delrol = cspice_twopi() / ncuts
+	; 获得目标星体DSK模型的边缘点坐标，边缘点坐标基于Body-fixed参考系
+	cspice_limbpt, method, $
+				target, et,     fixref,            $
+				abcorr,    corloc, obsrvr, z,      $
+				delrol,    ncuts,  schstp, soltol, $
+				MAXN, npts, points, epochs, tangts
+ 
+  	; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_pxform.html#Examples
+	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
+	cspice_pxform, fixref, 'J2000', et-ltime, rotate
+	rotate = transpose(rotate)
+	; 使用变换矩阵rotate将Body-fixed (x,y,z)坐标转换成J2000 (x,y,z)坐标
+	J2000_xyz_points = dblarr(3, MAXN)
+	start = 0
+	FOR j = 0, ncuts-1 DO BEGIN
+		FOR k = 0, npts[j]-1 DO BEGIN
+			temp = points[*, k+start]
+			J2000_xyz_points[*, k+start] = rotate#temp
+		ENDFOR
+		start = start + npts[j]
+	ENDFOR
+
+  	; 计算J2000下椭圆边缘点的切向量=椭圆边缘点坐标-航天器坐标（切向量由航天器指向边缘点）
+	x = J2000_xyz_points[0,*]-rho[0]
+	y = J2000_xyz_points[1,*]-rho[1]
+	z = J2000_xyz_points[2,*]-rho[2]
+	pvec = [x, y, z] ; J2000参考系下的切向量位置,从航天器指向目标星体
+	print, 'pvec = '
+	print, pvec
+	print
+	
+	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
+	cspice_recrad, pvec, range, ra, dec
+  
+	; 将DSK模型边缘点J2000 Ra/Dec坐标转换为sample/line坐标
+	radec2slcoord, ra, dec, sample, line
+
+	; 返回DSK模型边缘点的ra/dec坐标（毫弧）和sample/line坐标
+	RETURN, {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+END
+
+
+;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+; NAME: caviar_satModel_spice_dsk_getTermPoints, @孙德淦，2022.10.11
+; PURPOSE: 使用目标星体的DSK模型寻找从航天器看到的terminator边缘点,返回terminator边缘点的ra/dec坐标和sample/line坐标
+; INPUT:
+;     - satID：目标星体ID
+;     - spcID：航天器ID
+;     - n_points：模型边缘点数量
+;     - et： 星历表时间,表示航天器观测星体的时间
+; OUTPUT:返回目标星体DSK模型terminator边缘点的ra/dec坐标（毫弧）和sample/line坐标
+;     - {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+;---------------------------------------------------------------------------------------------------
+FUNCTION caviar_satModel_spice_dsk_getTermPoints, spcID, satID, n_points, et
+	; 设置cspice_termpt函数的参数
+	MAXN = n_points	/ 3; 可以存储的最大边缘点个数,设置为limb边缘点数量的三分之一
+	method = 'UMBRAL/TANGENT/DSK/UNPRIORITIZED'	; terminator定义为本影
+	z = [ 0.D, 0.0, 1.0 ]
+	ilusrc = 'SUN'	; 光源
+	str_spcID = string(spcID)
+	str_satID = string(satID)
+	obsrvr = strtrim(str_spcID)
+	target = strtrim(str_satID)
+	print, 'spc_ID = ', obsrvr
+	print, 'sat_ID = ', target
+
+	; fixref的名称格式为:IAU_body name,例如:火卫一,IAU_PHOBOS; 土卫九,IAU_PHOEBE
+	cspice_bodc2n, satID, sat_name, found
+  	if found then begin
+		print, 'sat_name = ', sat_name
+  	endif
+	fixref = 'IAU_' + sat_name
+	; cspice_namfrm将参考系名称转换为对应的参考系ID
+	cspice_namfrm, fixref, fixref_id
+	print, 'fixref = ', fixref
+	print, 'fixref_id = ', fixref_id
+
+	abcorr = 'CN+S'
+	corloc = 'CENTER'
+	cspice_spkpos, ilusrc, et, 'J2000', abcorr, target, pos, ltime
+	dist   = norm(pos)
+	schstp = 1.0d-1 / dist	; 搜索角度步长,大约对应100米的高度,以确保不会错过任何termnator
+    soltol = 1.0d-3 / dist	; 收敛容差的高度设置为1米左右
+	ncuts  = n_points		; 切割半平面的个数
+	delrol = cspice_twopi() / ncuts
+	; 获得目标星体DSK模型的terminator坐标,坐标基于Body-fixed参考系
+	cspice_termpt, method, ilusrc, target, et, fixref, $
+				   abcorr, corloc, obsrvr, z,      	   $
+				   delrol, ncuts, schstp, 			   $
+				   soltol, MAXN, npts, points, epochs, tangts
+ 
+  	; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_pxform.html#Examples
+	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
+	cspice_pxform, fixref, 'J2000', et-ltime, rotate
+	rotate = transpose(rotate)
+
+	; 使用变换矩阵rotate将切向量的Body-fixed (x,y,z)坐标转换成J2000 (x,y,z)坐标
+	term_pvec = dblarr(3, MAXN)		; J2000参考系下的切向量位置,从航天器指向目标星体的terminator
+	FOR i = 0, n_elements(tangts[0,*]) DO BEGIN
+		temp = tangts[*, i]
+		term_pvec = rotate#temp
+	END
+
+	; 将DSK模型terminator边缘点（由航天器指向terminaotor边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
+	cspice_recrad, term_pvec, range, ra, dec
+  
+	; 将DSK模型terminaotor边缘点J2000 Ra/Dec坐标转换为sample/line坐标
+	radec2slcoord, ra, dec, sample, line
+
+	; 返回DSK模型terminaotor边缘点的ra/dec坐标（毫弧）和sample/line坐标
+	RETURN, {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+END
+
+
 ;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 ; NAME: caviar_satModel_spice_dsk, @孙德淦，2022.10.2
 ; PURPOSE: 使用目标星体的DSK模型寻找从航天器看到的边缘点,返回边缘点的ra/dec坐标和sample/line坐标
@@ -241,7 +397,7 @@ END
 ;     - model：目标体边缘结构体,包含目标体的中心坐标、边缘坐标、明暗线坐标、赤道线坐标
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
-  print
+	print
 	print, '------------------------caviar_satModel_spice_dsk-------------------------------'
 
 	IF n_points LE 0 THEN MESSAGE, "Variable 'NPTS' must be greater than zero"
@@ -280,68 +436,6 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	; 获得太阳指向目标星体的位置向量(J2000)
 	cspice_spkez, 10L, et-ltime, 'J2000', 'CN', satID, state, ltime_sun
 	rho_sun=-state[0:2] ; 目标星体指向太阳的位置向量取反,获得太阳指向目标星体的位置向量
-	
-	; 设置cspice_limbpt函数的参数
-	MAXN = n_points	; 可以存储的最大边缘点个数
-	method = 'TANGENT/DSK/UNPRIORITIZED'
-	z = [ 0.D, 0.0, 1.0 ]
-	str_spcID = string(spcID)
-	str_satID = string(satID)
-	obsrvr = strtrim(str_spcID)
-	target = strtrim(str_satID)
-	print, 'obsrvr_ID = ', obsrvr
-	print, 'target_ID = ', target
-	; fixref的名称格式为:IAU_body name,例如:火卫一,IAU_PHOBOS; 土卫九,IAU_PHOEBE
-	
-	fixref = 'IAU_DIONE'
-
-	; cspice_namfrm将参考系名称转换为对应的参考系ID
-	cspice_namfrm, fixref, fixref_id
-	print, 'IAU_DIONE_ID = ', fixref_id
-	print, 'satID = ', satID
-
-	abcorr = 'CN+S'
-	corloc = 'CENTER'
-	schstp = 1.0d-4	    ; 搜索角度步长,100微弧
-	soltol = 1.0d-7	    ; 收敛角度,100纳弧
-	ncuts  = n_points		; 切割半平面的个数
-	delrol = cspice_twopi() / ncuts
-	; 获得目标星体DSK模型的边缘点坐标，边缘点坐标基于Body-fixed参考系
-	cspice_limbpt, method, $
-				target, et,     fixref,            $
-				abcorr,    corloc, obsrvr, z,      $
-				delrol,    ncuts,  schstp, soltol, $
-				MAXN, npts, points, epochs, tangts
- 
-  ; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_pxform.html#Examples
-	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
-	cspice_pxform, fixref, 'J2000', et-ltime, rotate
-	rotate = transpose(rotate)
-	; 使用变换矩阵rotate将Body-fixed (x,y,z)坐标转换成J2000 (x,y,z)坐标
-	J2000_xyz_points = dblarr(3, MAXN)
-	start = 0
-	FOR j = 0, ncuts-1 DO BEGIN
-		FOR k = 0, npts[j]-1 DO BEGIN
-			temp = points[*, k+start]
-			J2000_xyz_points[*, k+start] = rotate#temp
-		ENDFOR
-		start = start + npts[j]
-	ENDFOR
-
-  ; 计算J2000下椭圆边缘点的切向量=椭圆边缘点坐标-航天器坐标（切向量由航天器指向边缘点）
-	x = J2000_xyz_points[0,*]-rho[0]
-	y = J2000_xyz_points[1,*]-rho[1]
-	z = J2000_xyz_points[2,*]-rho[2]
-	pvec = [x, y, z] ; J2000参考系下的切向量位置,从航天器指向目标星体
-	print, 'pvec = '
-	print, pvec
-	print
-	
-	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
-	cspice_recrad, pvec, range, ra, dec
-  
-	; 将边缘点J2000 Ra/Dec坐标转换为sample/line坐标
-	radec2slcoord, ra, dec, sample, line
 
 	; 将图像目标体中心的J2000(x,y,z)坐标转换为J2000 RA/DEC坐标
 	cspice_recrad, rho_center, range, rac, decc
@@ -349,12 +443,14 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	; 将J2000 RA/DEC坐标转换为；sample/line坐标
 	radec2slcoord, rac, decc, sc, lc
 	
-	; 边缘模型结构体，记载了DSK模型边缘点的有关数据
-	limb = {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+	; 调用相关函数返回对应的边缘点
+	limb = caviar_satModel_spice_dsk_getLimbPoints(spcID, satID, n_points, et)
+	term = caviar_satModel_spice_dsk_getTermPoints(spcID, satID, n_points, et)
+  	;equa = caviar_satModel_spice_dsk_getEquaPoints(spcID, satID, n_points, et)
 	
   model = {npts: n_points, slCenter: [[sc],[lc]], rdCenter: [[rac],[decc]], $
     slLimb:[[limb.sample], [limb.line]], rdLimb:[[limb.ra], [limb.dec]], $
-    slTerm:[[0], [0]], rdTerm:[[0], [0]], $
+    slTerm:[[term.sample], [term.line]], rdTerm:[[term.ra], [term.dec], $
     slEqua:[[0], [0]], rdEqua:[[0], [0]] $
   }
 
