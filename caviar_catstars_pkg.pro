@@ -368,6 +368,7 @@ FUNCTION caviar_catstars_ctlgaccess, strcat, epoch, pRA, pDEC, fovsearch, magmin
               cmd = 'vizquery -mime=text -source=I/350/gaiaedr3 Gmag="<'+strMagmax+ $
                 '" -out.form=mini -out="Source RA_ICRS DE_ICRS Gmag pmRA pmDE" -c=' $
                 +strRA+strDEC+' -c.rd='+strFOV+''
+                
               SPAWN, cmd, out
               
               IF n_elements(out) LE 31 THEN BEGIN
@@ -376,8 +377,12 @@ FUNCTION caviar_catstars_ctlgaccess, strcat, epoch, pRA, pDEC, fovsearch, magmin
               ENDIF
               
               ;Skip the Vizier header and footer: start from 32th row.
-              FOR i=31, N_ELEMENTS(out)-3 DO BEGIN
-
+              ;FOR i=31, N_ELEMENTS(out)-3 DO BEGIN
+              
+              ;注意，2022年10月发现，gaia edr3, 数据从第31行开始，不是从32行开始了。
+              ;     结束也是多了一行，也就是倒数第四行为最后一样，而不是倒数第三行为结束行了。
+              ;这一点，有可能是星表返回数据的问题，也可能是我新安装了系统，所得到的字符集识别出了问题。
+              FOR i=30, N_ELEMENTS(out)-4 DO BEGIN
                 values = STRSPLIT(out[i], ' ', /EXTRACT)
                 magi  = DOUBLE(values[3])
 
