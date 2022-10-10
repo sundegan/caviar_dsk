@@ -11,7 +11,7 @@
 ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
-	
+	print, '-----------caviar_satModel_spice_getPoints------------'
 	; Get CSPICE ellipsoid as viewed from the spacecraft:
 	; For limb, rhoi vector ~ sat->spc
 	; For terminator, rhoi vector ~ sun->sat
@@ -25,7 +25,7 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	;	- radius[0]:x轴上的椭球半轴长度
 	;	- radius[1]:y 轴上的椭球半轴长度
 	;	- radius[2]:z 轴上的椭球半轴长度
-	;	- rhoi:观察椭球的点,实际为body-fixed参考系下转置的rho位置向量,该点必须在椭球外
+	;	- rhoi:body-fixed参考系下观察椭球的点,该点必须在椭球外
 	; output:
 	;	- spice_ellipse:返回从指定位置看到的椭球的边缘,是一个结构体(椭球的边缘也是一个椭圆),该结构体具有如下几个属性：
 	;						    			- center:  dblarr(3),椭圆中心
@@ -150,7 +150,7 @@ END
 ; - model：   目标体模型结构体,包含目标体的中心坐标、边缘坐标、明暗线坐标、赤道线坐标
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
-  print, 'ELL:'
+  print, '-----------caviar_satModel_spice------------'
   print, 'spcID = ', spcID
   print, 'satID = ', satID
   
@@ -181,20 +181,22 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   ;     （state的前三个分量代表目标体位置的x、y和z分量;后三个分量构成相应的速度向量）
   ; 	- ltime:观察者和目标之间的单向光照时间,单位为秒
   cspice_spkez, satID, et, 'J2000', 'CN+S', spcID, state, ltime
-  rho=-state[0:2] ; 获取从目标星体指向观察者的位置向量(J2000)
-  rho_center=rho  ; rho_center即为从目标星体指向观察者的位置向量(J2000)
+  rho=-state[0:2] ; 观察者相对于目标星体的位置向量(J2000)
+  rho_center=rho  ; rho_center即为从观察者相对于目标体的位置向量(J2000)
   
-  length_target_to_obsrver = NORM(rho_center)
-  print, 'length_target_to_obsrver = ', length_target_to_obsrver
+  ; debug
+  length_sat_to_spc = NORM(rho)
+  print, 'length_sat_to_spc = ', length_sat_to_spc
   help, rho
   print, 'rho = ', rho
 
-  ; 判断center变量是否已经定义且非零值,center是CAVIAR_DATA公共块image结构体中的一个成员变量
+  ; KEYWORD_SET函数根据指定表达式的值返回一个字节值,如果其参数已定义且非零，则返回1（真），否则返回0（假）
+  ; center是CAVIAR_DATA公共块image结构体中的一个成员变量
   IF KEYWORD_SET(center) THEN BEGIN
-    ; slcoord2radec是自定义过程,将图像的X/Y坐标转换为RA/Dec坐标
-    ; Input:含有像素的X/Y坐标的标量或数组
+    ; slcoord2radec是自定义过程,将图像的X/Y坐标转换为RA/DEC坐标
+    ; INPUT:含有像素的X/Y坐标的标量或数组
     ; 可选输入参数:/ITERATE
-    ; Output:包含RA/Dec坐标（单位:弧度）的标量或数组
+    ; OUTPUT:包含RA/Dec坐标的标量或数组
     slcoord2radec, center[0], center[1], RA, dec, /ITERATE  ; 将图像的中心x/y坐标转换为赤经、赤纬坐标
 
     ; NORM函数计算向量或二维数组的范数,默认NORM对向量计算二范数,对数组计算0范数
@@ -207,8 +209,9 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   cspice_spkez, 10L, et-ltime, 'J2000', 'CN', satID, state, ltime_sun
   rho_sun=-state[0:2] ; 目标星体指向太阳的位置向量取反,获得太阳指向目标星体的位置向量
   
-  length_sun_to_target = NORM(rho_sun)
-  print, 'length_sun_to_target = ', length_sun_to_target
+  ; debug
+  length_sun_to_sat = NORM(rho_sun)
+  print, 'length_sun_to_sat = ', length_sun_to_sat
 
 
   ;# Get 3x3 transformation matrix from inertial (J2000) to body-equator-and-prime-meridian coordinates: (tipm)
@@ -240,14 +243,18 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   ;		- tipm:将位置向量从惯性参考系转换到body-fixed参考系的变换矩阵
   ;		- 5:边缘点数量
   ;		- rho:从目标星体指向观察者的位置向量(J2000)
-  ;		- TRANSPOSE(tipm##rho):将rho位置向量从J2000转为body-fixed参考系,同时将行向量变为列向量,方便后续计算
+  ;		- rhoi:将rho位置向量从J2000转为body-fixed参考系，同时将列向量转为行向量
   ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
-  limb = caviar_satModel_spice_getPoints(radii, tipm, 2, rho, TRANSPOSE(tipm##rho))
+  ; TRANSPOSE对矩阵或数组进行转置,这里将列向量转为行向量,因为cspice_edlimb要求传入的是行向量(三维数组)
+  rhoi = TRANSPOSE(tipm##rho)
+  limb = caviar_satModel_spice_getPoints(radii, tipm, 2, rho, rhoi)
+  print, 'ell_limb = '
+  print, limb
+
+
   ; term = caviar_satModel_spice_getPoints(radii, tipm, 2, rho, TRANSPOSE(tipm##rho_sun))
   ; equa = caviar_satModel_spice_getPoints(radii, tipm, 2, rho, [0.0D, 0.0D, 300000.0D])
 
-  print, 'ell_limb = '
-  print, limb
 
   ;# Compute limb center ra/dec & x/y position from rectangular coordinates (rho_center)
   ; 计算三维直角坐标下物体中心的ra/dec和x/y位置（rho_center）
