@@ -4,14 +4,14 @@
 ; INPUT:
 ;		- radii:椭圆体三轴半径
 ;		- tipm:将位置向量从惯性参考系转换到body-fixed参考系的变换矩阵
-;		- 5:边缘点数量
+;		- npts:边缘点数量
 ;		- rho:从目标星体指向观察者的位置向量(J2000)
-;		- rhoi:TRANSPOSE(tipm##rho):将rho位置向量从J2000转为body-fixed参考系,同时将向量转置（猜测是计算需要）
-;				转置将z轴和x轴的坐标对换
+;		- rhoi:body-fixed参考系下观察椭球的点,该点必须在椭球外
 ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
-	print, '-----------caviar_satModel_spice_getPoints------------'
+  print
+	print, '-----------------caviar_satModel_spice_getPoints--------------------'
 	; Get CSPICE ellipsoid as viewed from the spacecraft:
 	; For limb, rhoi vector ~ sat->spc
 	; For terminator, rhoi vector ~ sun->sat
@@ -33,7 +33,6 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	;										- semiminor: dblarr(3),椭圆短半轴长度
 	cspice_edlimb, radius[0], radius[1], radius[2], rhoi, spice_ellipse
 	
-	; Extract CSPICE ellipsoid parameters: center, semi-major axis and semi-minor axis
 	; 提取Spice椭圆参数：中心、长半轴和短半轴（Body-fixed三维坐标）
 	;	- center:椭圆中心
 	;	- smajor:长半轴
@@ -41,49 +40,97 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	; cspice_el2cgv:将一个SPICE椭圆转换为一个中心向量和两个生成向量,两个生成向量是椭圆的半轴
 	; 这个椭圆是以下这些点的集合:center + cos(θ)*smajor + sin(θ)*sminor,其中θ的范围在区间 (-π, π]
 	cspice_el2cgv, spice_ellipse, center, smajor, sminor
-	print, 'B_center = ', center
-	print, 'B_smajor = ', smajor
-	print, 'B_sminor = ', sminor
+	print, 'bf_center = ', center
+	print, 'bf_smajor = ', smajor
+	print, 'bf_sminor = ', sminor
+  ;bf_center =       0.12117643     -0.10904647   0.00061727738
+	;bf_smajor =        378.17827       416.07317      -1.5156902
+	;bf_sminor =      -0.56666339       2.5561170       560.29388
 
-	; Convert ellipsoid parameters from body-fixed (x,y,z)sat to inertial (x,y,z)J2000 coordinates:
-	; 将椭圆体参数从以目标体为中心的(x,y,z)坐标转换成J2000 (x,y,z)坐标
-	print, 'ell_tipm = '
+	; 将椭圆参数从Body-fixed(x,y,z)参考系转换成J2000 (x,y,z)参考系
+	print, 'tipm = '
 	print, tipm
+	;-0.62270788      0.78244289   -0.0042444299
+	;-0.77775553     -0.61836563      0.11278424
+	;0.085622617     0.073532764      0.99361044
+
 	J2000_center = tipm#center
 	J2000_smajor = tipm#smajor
 	J2000_sminor = tipm#sminor
+	
+	; debug
+	; Body-fixed = tipm✖J2000 ==> J2000 = INVERT(tipm)✖Body-fixed
+	J2000_center_test = INVERT(tipm)##center
+	help, J2000_center_test
+	print, 'J2000_center_test = '
+	print, J2000_center_test
+	;J2000_CENTER_TEST
+	;DOUBLE    = Array[1, 3]
+	;J2000_center_test =
+	;0.0094068306
+	;0.16228962
+	;-0.012199715
+
 	print, 'tipm#B_parameters:'
 	print, 'J2000_center = ', J2000_center
 	print, 'J2000_smajor = ', J2000_smajor
 	print, 'J2000_sminor = ', J2000_sminor
+  ;J2000_center =     0.0094068306      0.16228962    -0.012199715
+	;J2000_smajor =       -559.22758       38.506098       43.815340
+	;J2000_sminor =        46.338660       39.175961       557.00454
 
-	; Construct theta vector from -pi to +pi
 	; 构建从-π到+π的θ向量
 	; theta = LINDGEN(npts) * 2*!DPI/(npts-1) - !DPI
 	delrol = 2*!DPI/npts
 	theta = LINDGEN(npts) * delrol
 	print, 'θ = ', theta
+	;θ =        0.0000000       3.1415927 
 	
-	; Compute ellipsoid points position in inertial coordinates
-	; 在惯性坐标J2000(x,y,z)中计算椭圆体边缘点的位置
+	; 在惯性参考系J2000(x,y,z)中计算椭圆体边缘点的位置
 	J2000_xyz_points = DBLARR(3,npts)
 	cos = cos(theta)#J2000_smajor
 	sin = sin(theta)#J2000_sminor
-	; REPLICATE创建一个n维数组或矩阵,数组和矩阵的值用center[i]填充
+	help, cos
+	help, sin
+	print, 'cos = '
+	print, cos
+	print, 'sin = '
+	print, sin
+  ;COS  DOUBLE = Array[2, 3]
+	;SIN  DOUBLE = Array[2, 3]
+	;cos =
+  ;  -559.22758       559.22758
+  ;  38.506098      -38.506098
+  ;  43.815340      -43.815340
+	;sin =
+  ;  0.0000000   5.6748491e-15
+  ;  0.0000000   4.7976715e-15
+  ;  0.0000000   6.8213383e-14
+  
+  ; debug
+	; REPLICATE创建一个n维数组或矩阵(npts为2,则创建一个2维数组),数组和矩阵的值用center[i]填充
+	center_test = REPLICATE(J2000_center[0], npts)
+	help, center_test
+	print, 'center = ', center_test
+	;CENTER_TEST     DOUBLE    = Array[2]
+	;center = 0.0094068306    0.0094068306
+	
+	; 将cos和sin中的列向量变成行向量,J2000_xyz_points中的一行表示一个边缘点在J2000参考系下的位置
 	FOR i=0,2 DO J2000_xyz_points[i,*] = REPLICATE(J2000_center[i], npts) + cos[*,i] + sin[*,i]
-	print, 'ell_J2000_xyz_points = '
+	help, J2000_xyz_points
+	print, 'J2000_xyz_points = '
   print, J2000_xyz_points
-  
-  ; Body-fixed下计算椭圆边缘点位置,再转换为J2000坐标
-  
-  
-	; Compute ellipse point vector
-	; 计算椭圆边缘点切向量,椭圆边缘点坐标-航天器坐标
+  ;J2000_XYZ_POINTS   DOUBLE = Array[3, 2]
+  ;J2000_xyz_points =
+  ;    -559.21817       38.668388       43.803140
+  ;     559.23699      -38.343809      -43.827540
+
+	; 计算椭圆边缘点切向量=椭圆边缘点坐标-航天器坐标(J2000)
 	x = J2000_xyz_points[0,*]-rho[0]
 	y = J2000_xyz_points[1,*]-rho[1]
 	z = J2000_xyz_points[2,*]-rho[2]
-	pvec = [x, y, z]
-	
+	pvec = [x, y, z] ; J2000参考系下的切向量位置,从航天器指向目标星体
+
 	;***********************************************************************************************
 	; Filter ellipse points that are not in the plane normal to pointing vector:
 	; 过滤不在指向矢量法线上的椭圆边缘点:
@@ -150,7 +197,8 @@ END
 ; - model：   目标体模型结构体,包含目标体的中心坐标、边缘坐标、明暗线坐标、赤道线坐标
 ;---------------------------------------------------------------------------------------------------
 FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
-  print, '-----------caviar_satModel_spice------------'
+  print
+  print, '--------------------------caviar_satModel_spice----------------------------'
   print, 'spcID = ', spcID
   print, 'satID = ', satID
   
@@ -201,7 +249,7 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
 
     ; NORM函数计算向量或二维数组的范数,默认NORM对向量计算二范数,对数组计算0范数
     rho = - NORM(rho) * [COS(dec)*COS(RA), COS(dec)*SIN(RA), SIN(dec)]
-    rho_center=-rho ; 目标物体中心的赤经赤纬坐标
+    rho_center=-rho 
   ENDIF
 
   ;# Get sun->sat position vector
