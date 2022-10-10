@@ -79,9 +79,9 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
   
 	; Compute ellipse point vector
 	; 计算椭圆边缘点切向量,椭圆边缘点坐标-航天器坐标
-	x = points[0,*]-rho[0]
-	y = points[1,*]-rho[1]
-	z = points[2,*]-rho[2]
+	x = J2000_xyz_points[0,*]-rho[0]
+	y = J2000_xyz_points[1,*]-rho[1]
+	z = J2000_xyz_points[2,*]-rho[2]
 	pvec = [x, y, z]
 	
 	;***********************************************************************************************
@@ -90,7 +90,7 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	invNorm_pvec = DBLARR(3,npts)
 	FOR i=0L, npts-1 DO invNorm_pvec[*,i] = 1.0D/NORM(pvec[*,i])
 	
-	points_test = TRANSPOSE(tipm) # (points - 0.05*pvec*invNorm_pvec)
+	points_test = TRANSPOSE(tipm) # (J2000_xyz_points - 0.05*pvec*invNorm_pvec)
 	pvec_test = -(TRANSPOSE(tipm) # pvec)
 		
 	found = INTARR(npts)
