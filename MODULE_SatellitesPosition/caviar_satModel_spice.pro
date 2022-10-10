@@ -292,6 +292,7 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	print, 'obsrvr_ID = ', obsrvr
 	print, 'target_ID = ', target
 	; fixref的名称格式为:IAU_body name,例如:火卫一,IAU_PHOBOS; 土卫九,IAU_PHOEBE
+	
 	fixref = 'IAU_DIONE'
 
 	; cspice_namfrm将参考系名称转换为对应的参考系ID
