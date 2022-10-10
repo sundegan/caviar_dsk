@@ -73,8 +73,8 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	
 	points_test = TRANSPOSE(tipm) # (J2000_xyz_points - 0.05*pvec*invNorm_pvec)
 	pvec_test = -(TRANSPOSE(tipm) # pvec)
-		
 	found = INTARR(npts)
+	
 	FOR i=0L, npts-1 DO BEGIN
 		; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_surfpt.html
 		; cspice_surfpt确定视线向量与椭球表面的交点
@@ -93,11 +93,9 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 		found[i] = fndi
 	ENDFOR
 	index = WHERE(found EQ 0, count)
-	IF count GT 0 THEN pvec_fnd = pvec[*,index] ELSE RETURN, 0
-	; 过滤完之后的边缘点切向量
-	help, pvec_fnd
-	print, 'pvec_fnd = '
-	print, pvec_fnd
+	IF count GT 0 THEN pvec_fnd = pvec[*,index] ELSE RETURN, 0 ; pvec_fnd是过滤完之后的边缘点切向量
+
+
 
 	;***********************************************************************************************
 	; 将椭圆边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(RA,dec)坐标（弧度）
@@ -312,7 +310,7 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 				target, et,     fixref,            $
 				abcorr,    corloc, obsrvr, z,      $
 				delrol,    ncuts,  schstp, soltol, $
-				MAXN, npts, points, trgeps, tangts
+				MAXN, npts, points, epochs, tangts
  
   ; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_pxform.html#Examples
 	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
@@ -336,6 +334,7 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	pvec = [x, y, z] ; J2000参考系下的切向量位置,从航天器指向目标星体
 	print, 'pvec = '
 	print, pvec
+	print
 	
 	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
 	cspice_recrad, pvec, range, ra, dec
@@ -351,8 +350,6 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	
 	; 边缘模型结构体，记载了DSK模型边缘点的有关数据
 	limb = {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
-	PRINT, 'dsk_limb = '
-	PRINT, limb
 	
   model = {npts: n_points, slCenter: [[sc],[lc]], rdCenter: [[rac],[decc]], $
     slLimb:[[limb.sample], [limb.line]], rdLimb:[[limb.ra], [limb.dec]], $
