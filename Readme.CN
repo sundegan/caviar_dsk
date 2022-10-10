@@ -1,0 +1,215 @@
+2021年10月9日
+该软件基于caviar_phoebe2版本进行修改，目的是将835个Phoebe测量的结果和不同历表进行比较，计算O——C。
+
+该软件修改专门用于上述目的，进行了多处修改。主要信息如下：
+（1）见原来caviar_Phoebe2中自动全测量的功能废除掉，修改为自动计算不同历表下的理论位置。
+（2）计算不同历表下的理论位置的过程基本如下：
+先载入img文件，然后读取qmpf文件中的指向数据，和cmat。然后载入星体，这时候理论位置就得到了。然后计算各种后处理，输出数据。
+（3）对sat375/IMCCE Ph20.bsp进行了比较计算。结果表明sat375吻合很好。ph20，sat427效果都不好。
+（4）在使用ph20的时候，出现了数据不充分的提示，无法使用。最终在kernel文件列表中，先载入sat427.bsp,然后载入ph20.bsp文件。解决问题。
+问题的原因猜测如下： 由于要计算从phoebe到cassini的相对位置，这里面需要phoebe到太阳系，太阳系到地球，地球到cassini等相对几何关系的数据，这里面sat427应该提供了完整的几何关系，而ph20没有提供完整的几何关系，所以，先载入sat427.bsp，然后载入ph20.bsp，这样新的几何关系被ph20替换，缺乏的关系仍然由ph20提供。最终解决了ph20无法计算的问题。
+(5)在输出各种数据的时候要注意后处理的数据计算。输出的计算量/位置次序/单位等不要出现错误。
+(6)软件在使用的时候要认真检查代码，进行修改，代码中有好多定制的地方，比如数据的读取/写入，数据文件存储的地方/文件的名称等。
+(7)使用的时候注意修改kerphoebe.tm文件，这里的文件直接关系到使用了哪个历表做参照。
+
+---------------------------------------------
+
+2021年8月22日拷贝caviar_r1.4，主要目的是为了测量phoebe
+
+分割线以下为原来的注释。以上为拷贝cavairr1.4之后的注释，为了测量pHoebe进行的软件改造注释。
+
+------------------------------------------------------------------------
+2021年4月19日
+该版本确定使用修正矩方法，并且使用内3外7的方形区域做背景，边长为3的做前景。
+这个方案是经过比较得到的。
+
+和r1.3相比，修改了
+在图像星的测量方面使用了函数：
+文件： caviar_imgstars_pkg.pro
+FUNCTION caviar_imgstars_find
+该函数调用了函数： CAVIAR_CTRD_MM_STAR
+这是使用修正矩对星体进行测量的函数。
+
+在卫星的定心测量方面使用了函数：
+CAVIAR_CTRD_MM_SAT
+
+这个函数在测量methone和atlas的时候针对具体问题做了各种调整。
+也就是说在测量methone和atlas的特殊图像的时候，随时修改各种初始值，进行测量。
+
+后来这个版本也用来进行了星场的比较测量，星场的比较测量只涉及CAVIAR_CTRD_MM_STAR函数。从而确定修正矩较好。
+
+
+
+2021年3月18日
+这里进行了多处改动，主要是为了计算Methone的位置
+（1）将星体的修正矩计算方案重新写过，将晓妹的修正矩方法放弃，也就是和mn的方案有些区别了。
+同时做了一些测试。全部修正在caviar_imgstars_pkg.pro文件中。
+其中的方案，还应该可以继续完善，就是根据星场图像进一步确定背景和前景区域的范围。目前背景和前景都使用了固定的区域。
+（2）将卫星的修正矩测量方案重新写过。大幅度修正，不再使用caviar_image_finds函数。基本原理：
+根据理论计算出来的位置，搜索近邻的最大值所在位置，然后使用cntrd和我的修正矩进行测量。
+全部修正在caviar_findsatcentroid.pro文件中。
+
+注意，目前在卫星测量方法不存在can not find centoid 错误。
+
+------------------------------------------------------------------------------------
+自此以下都是r1.3中的修改。 r1.4的修改在此分割线之上。
+
+修改6:2021年3月24日
+bug despcript: 向qmpf文件输出了错误的RMS_total值。
+文件： caviar_save2qmpf.pro
+函数： PRO caviar_save2qmpf, CAM_OFFSET_QUAT=cam_offset_quat, FLAG=flag
+
+原来的：
+	rms_tRes = SQRT( (txresidual+tyresidual) / (n_fitStars*(n_fitStars-1)) )	
+修改为：
+	rms_tRes = SQRT( (txresidual+tyresidual) / n_fitStars )  
+
+
+
+-------------------------------------------------------------------------------------
+2021年3月3日
+在caviar_satPos_pkg.pro文件中，需要对如下函数进行修订
+PRO caviar_satPos_save, format
+
+在这个函数里面，应该将语句 STRPUT, s, "_", STREGEX(s, " ") 注释掉。
+修改的原因如下：
+	;Modified by Zhangqf, 3 Mar, 2021
+	; remove the sentence:  STRPUT, s, "_", STREGEX(s, " ")
+	; The line below should be remove, because there is something wrong with it 
+	; for example:
+	;       S="LIMB-FIT"
+	;       STREGEX(S, " ")                   //return -1, because there is no " " in S.
+	;       STRPUT, S, "_", stregex(S," ")    //return "_IMB-FIT".   because it will replace the first letter with "_"
+	 
+	;STRPUT, s, "_", STREGEX(s, " ")
+
+————————————————————————————————————————————————————————————————————————————————
+
+2021年3月２日
+这是在ｒ1.3的版本上添加了修正矩测量点源的方法。
+这个处理目前采用的是周晓妹提出的循环比较的方法，和ｍｎ投稿上的内容一致。后面可能考虑进一步改进。
+为了使用点元的修正矩方法，做了如下几个地方的修订
+（１）修改了ｃａｖｉａｒ.pro文件，这里面的关键是：
+
+追加了如下的语句：
+
+;################## Added by zhangqf, Dec. 2019.  START################################
+;############# set centroiding method whether using modified moments.  ################
+;############# CAVIAR_IMGSTAR_CENTROIDING means the centroiding method 
+;       of measurement of image stars.                                 ################
+SETENV, 'CAVIAR_IMGSTAR_CENTROIDING=ModifiedMoments'
+;############# CAVIAR_SATELLITE_CENTROIDING means the centroiding method
+;       of measurement of satellite.                                 ################
+SETENV, 'CAVIAR_SATELLITE_CENTROIDING=ModifiedMoments'
+
+;################## Added by zhangqf, Dec. 2019. 　END ################################
+
+这两个语句控制了指向矫正时候的星体定位算法，以及后面卫星定位测量（点状卫星图像，不是圆盘状卫星图像）的测量方法。
+如果设定为‘ModifiedMoments’，则使用修正矩方法，如果不是，则为高斯法。
+
+（２）对文件caviar_findsatcentroid.pro进行了修改,相关处有注释。
+
+（３）对caviar_imgstars_pkg.pro文件进行了修改，相关处有注释。
+
+
+————————————————————————————————————————————————————————————————————————————————
+２０２１年３月２日
+
+该版本被命名为r1.3, 仅仅在ｉｍｃｃｅ的r1.0版本上做了如下修改。注意点源测量没有修改，沿用
+以前的gaussian法，并没有修订为修正矩等方法。该版本是以后各种修改版本的基础版。
+原来的r1.1版本本来作为修改的基础版本，但是其中的一些ｂｕｇ以前没有发现，并修复。所以作废。
+另外ｒ1.1版本上追加了ｌｏｇ边缘检测算法的版本，叫做了ｒ1.２，为了保持历史版本不动，这里叫做ｒ1.3
+本版本叫做r1.3，以示和ｒ1.1/r1.2的区别。
+
+————————————————————————————————————————————————————————————————————————————————————
+修改４：
+2021年３月２日
+
+追加GaiaDr2 GaiaEDR3两个版本的星表。
+修改了两个文件：caviar_catstars_pkg.pro　和　set_starsCatalogs.pro　。
+需要注意的是，由于gaia星表很大，目前缺省星等范围是-2---14等，在某些指向下可能会有
+很多星需要载入，这个时候需要较长的时间等待。因此必要的时候可以直接在代码中
+（set_starsCatalogs.pro文件中）修改载入的星等范围，比如-2-10等，尤其是在ｗａｃ图像中。
+
+重点在于修改caviar_catstars_pkg.pro中的函数，以添加对这些星表数据的读取。添加部分有注释。
+FUNCTION caviar_catstars_ctlgaccess, strcat, epoch, pRA, pDEC, fovsearch, magmin, magmax
+
+在修改星表的过程中，修正了形式。结果在反复使用ｕｃａｃ５星表的时候，出现错误：
+“Atempted to undifined procedure: 'C' ”,
+后面重新改写，保持原始的ｕｃａｃ5和tycho不动（尽管形式有些乱），直接添加了ｇａｉａ星表，
+这时候不出现该错误。
+
+——————————————————————————————————————————————————————————————————————————————————————
+修改３：
+2021年３月２日
+
+函数　FUNCTION caviar_getParams_cassini, header, format, getCmatMethods
+存在一个ｂｕｇ。
+
+读取参数有两种方式，一种是外部文件（ｌｂｌ文件），一种是图像文件的头部
+在第二种方式中，采用了下面的语句
+'INTVIC': BEGIN
+                        labels = ['^NS$', '^EXPOSURE_DURATION$', '^IMAGE_TIME$', $
+					  '^INSTRUMENT_ID$', 'TARGET_NAME']
+			types = ['INT','DOUBLE','STRING','STRING','STRING']
+			values = headerXtract(header, labels, types,'',['','','Z','',''])
+建议修改为：
+'INTVIC': BEGIN
+                        labels = ['^NS$', '^EXPOSURE_DURATION$', '^IMAGE_MID_TIME$', $
+					  '^INSTRUMENT_ID$', 'TARGET_NAME']
+			types = ['INT','DOUBLE','STRING','STRING','STRING']
+			values = headerXtract(header, labels, types,'',['','','Z','',''])
+
+同时将其中的下面语句，修订ｅｔ的语句注释掉。即下面的情况
+cspice_str2et, ctime, et
+;If using INTERNAL header, ctime is IMAGE_TIME (shutter closing time), so subtract 0.5*exposure to get mid-time:  
+        ;if format eq 'INTVIC' then  et -= 0.5*exposure
+
+这样在参数ｉｍａｇｅ.imgmidtime参数的值才会是正确的，否则得到的是图像开始的时间。
+不过这个修订，对整个整个工作没有实质的影响。它只是对参数 image.imgmidtime的值的获取有影响。一般用的是ｅｔ，这个是正确的。
+
+——————————————————————————————————————————————————————————————————————————————————
+修改２：
+2021年３月１日
+
+修改了caviar_satpos_gui.pro文件中的函数　PRO caviar_satPos_gui_event, event
+
+其中的语句
+caviar_satPos_setResults, "CENTROIDING", [rslt.xcent, rslt.ycent], rslt.sigma, rslt.xoffset, rslt.yoffset
+被修改为：
+caviar_satPos_setResults, "CENTROID", [rslt.xcent, rslt.ycent], rslt.sigma, rslt.xoffset, rslt.yoffset
+
+并追加了如下注释。
+; if using "CENTROIDING" in caviar_satPos_setResults, the satellite result will not be ouputted into .QMPF file.
+; because there are below codes in caviar_save2qmpf.pro. it require ( planetes[i].method=="CENTROID")
+;
+; CASE STRUPCASE((planets[i]).method) OF
+;    "LIMB-FIT":     ; Fitted center of figure based on limb-fit
+;    "CENTROID":       ; Fitted center of light (centroid)
+;    "ESTIMATED": BEGIN    ; Estimated centre (alias method 3)
+;       col_offset, (planet[i]).id, image.SPC.ID, image.et, image.cmat, image.fovpix, $
+;          yoffset, xoffset
+;      END
+;    ELSE: GOTO, PASS_NEXT   ;Pass to next planet
+; ENDCASE
+
+这主要是应为点元测量的时候不能输出卫星的测量结果，这里修订后可以输出点元卫星的测量结果到ＱＭＰＦ中。
+			
+————————————————————————————————————————————————————————————————————————
+
+修改１：
+２０２１年３月１日
+
+这原本是IMCCE下载下来的标准caviar版本r1.0，使用中发现了一些ｂｕｇ，这里进行基本修订，以作为后面进一步改造的基础。
+首先追加了本文件，本文件为中文版的ｒｅａｄｍｅ, 记录其中的ｂｕｇ修订。命名为　readme.cn。
+当然为了运行caviar.pro进行了一些语句修改。这个是所有的安装都需要进行的。在此不予以记录。参考安装手册即可。
+另外在使用的时候需要注意，ｋｅｒｎｅｌ文件列表文件（如　test.tm, kerMethone.tm等），
+其中/begindata 需要在前，／begintext　语句在后面。也就是ｋｅｒｎel文件的列表放在前面，注释放在后面。
+否则，写入ＱＭＰＦ文件的时候，所使用的kernel文件列表不能正常写入其中。
+
+
+
+
+
+
+
