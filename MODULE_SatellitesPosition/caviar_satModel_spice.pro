@@ -82,13 +82,13 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 		;		- points_test[*,i]:一个三维向量,观察者相对于椭球中心的位置,在Body-fixed坐标下表示
 		;		- pvec_test[*,i]:从观察者发出的3维指向向量
 		;		- radius[0]:椭球半轴长度,平行于body-fixed参考系下的x轴
-		; 	- radius[1]:椭球半轴长度,平行于body-fixed参考系下的y轴
+		; 		- radius[1]:椭球半轴长度,平行于body-fixed参考系下的y轴
 		;		- radius[2]:椭球半轴长度,平行于body-fixed参考系下的z轴
 		; OUTPUT:
 		; 		- fndpnt:从观察者位置发出的指向矢量在椭球表面上的截点位置。
 		;		   如果射线与椭球相交,“截点”是该射线第一次遇到椭球的地方的Body-fixed坐标
 		;		   如果不相交,截点将返回(0, 0, 0)
-		;		  - fndi:一个逻辑标志位,表示来自观察者的射线是否与椭球相交,相交返回TRUE,不相交返回FALSE
+		;		- fndi:一个逻辑标志位,表示来自观察者的射线是否与椭球相交,相交返回TRUE,不相交返回FALSE
 		cspice_surfpt, points_test[*,i], pvec_test[*,i], radius[0],radius[1],radius[2], fndpnt, fndi
 		found[i] = fndi
 	ENDFOR
@@ -113,6 +113,62 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	radec2slcoord, ra, dec, sample, line
 			
 	; 返回椭圆边缘点的ra/dec坐标（毫弧）和sample/line坐标
+	RETURN, {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
+END
+
+
+FUNCTION caviar_satModel_spice_ell_getLimbPoints, spcID, satID, n_points, et, ltime
+  print
+  print, '-----------------caviar_satModel_spice_ell_getLimbPoints--------------------'
+  
+	; 设置cspice_limbpt函数的参数
+	MAXN = n_points	; 可以存储的最大边缘点个数
+	method = 'TANGENT/ELLIPSOID'
+	z = [ 0.D, 0.0, 1.0 ]
+
+	str_spcID = string(spcID)
+	str_satID = string(satID)
+	obsrvr = strtrim(str_spcID)
+	target = strtrim(str_satID)
+
+	; fixref的名称格式为:IAU_body name,例如:火卫一,IAU_PHOBOS; 土卫九,IAU_PHOEBE
+	cspice_bodc2n, satID, sat_name, found
+	if found then begin
+	 print, 'sat_name = ', sat_name
+	endif
+	fixref = 'IAU_' + sat_name
+	; cspice_namfrm将参考系名称转换为对应的参考系ID
+	cspice_namfrm, fixref, fixref_id
+	print, 'fixref = ', fixref
+
+	abcorr = 'CN+S'
+	corloc = 'CENTER'
+	schstp = 1.0d-4	    ; 搜索角度步长,100微弧
+	soltol = 1.0d-7	    ; 收敛角度,100纳弧
+	ncuts  = n_points		; 切割半平面的个数
+	delrol = cspice_twopi() / ncuts
+	; 获得目标星体DSK模型的边缘点坐标，边缘点坐标基于Body-fixed参考系
+	cspice_limbpt, method, $
+				target, et,     fixref,            $
+				abcorr,    corloc, obsrvr, z,      $
+				delrol,    ncuts,  schstp, soltol, $
+				MAXN, npts, points, epochs, tangts
+ 
+  ; https://naif.jpl.nasa.gov/pub/naif/toolkit_docs/IDL/icy/cspice_pxform.html#Examples
+	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
+	cspice_pxform, fixref, 'J2000', et-ltime, rotate
+	rotate = transpose(rotate)
+  
+  pvec = dblarr(3, MAXN)
+  FOR i = 0, n_elements(tangts[0,*])-1 DO pvec[*,i] = rotate#tangts[*,i]
+  
+	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
+	cspice_recrad, pvec, range, ra, dec
+  
+	; 将DSK模型边缘点J2000 Ra/Dec坐标转换为sample/line坐标
+	radec2slcoord, ra, dec, sample, line
+
+	; 返回DSK模型边缘点的ra/dec坐标（毫弧）和sample/line坐标
 	RETURN, {RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
 END
 
@@ -210,7 +266,8 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   ;		- rhoi:将rho位置向量从J2000转为body-fixed参考系，同时将列向量转为行向量
   ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
   ; TRANSPOSE对矩阵或数组进行转置,这里将列向量转为行向量,因为cspice_edlimb要求传入的是行向量(三维数组)
-  limb = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, TRANSPOSE(tipm##rho))
+  limb = caviar_satModel_spice_ell_getLimbPoints(spcID, satID, n_points, et, ltime)
+  ;limb = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, TRANSPOSE(tipm##rho))
   term = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, TRANSPOSE(tipm##rho_sun))
   equa = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, [0.0D, 0.0D, 300000.0D])
 
@@ -282,27 +339,6 @@ FUNCTION caviar_satModel_spice_dsk_getLimbPoints, spcID, satID, n_points, et, lt
 	; CSPICE_PXFORM返回将位置向量从Body—fixed参考系转换为J2000参考系的变换矩阵rotate
 	cspice_pxform, fixref, 'J2000', et-ltime, rotate
 	rotate = transpose(rotate)
-	
-;  ; 使用变换矩阵rotate将Body-fixed (x,y,z)坐标转换成J2000 (x,y,z)坐标
-;  J2000_xyz_points = dblarr(3, MAXN)
-;  start = 0
-;  FOR j = 0, ncuts-1 DO BEGIN
-;    FOR k = 0, npts[j]-1 DO BEGIN
-;      temp = points[*, k+start]
-;      J2000_xyz_points[*, k+start] = rotate#temp
-;    ENDFOR
-;    start = start + npts[j]
-;  ENDFOR
-;  print, 'dsk_J2000_xyz_points = '
-;  print, J2000_xyz_points
-;
-;  ; 计算J2000下椭圆边缘点的切向量=椭圆边缘点坐标-航天器坐标（切向量由航天器指向边缘点）
-;  x = J2000_xyz_points[0,*]-rho[0]
-;  y = J2000_xyz_points[1,*]-rho[1]
-;  z = J2000_xyz_points[2,*]-rho[2]
-;  pvec = [x, y, z] ; J2000参考系下的切向量位置,从航天器指向目标星体
-;  print, 'pvec = '
-;  print, pvec
   
   pvec = dblarr(3, MAXN)
   FOR i = 0, n_elements(tangts[0,*])-1 DO pvec[*,i] = rotate#tangts[*,i]
@@ -336,7 +372,7 @@ FUNCTION caviar_satModel_spice_dsk_getTermPoints, spcID, satID, n_points, et, lt
   
 	; 设置cspice_termpt函数的参数
 	MAXN = n_points	; 可以存储的最大边缘点个数
-	method = 'UMBRAL/TANGENT/DSK/UNPRIORITIZED'	; terminator定义为本影
+	method = 'PENUMBRAL/TANGENT/DSK/UNPRIORITIZED'	; terminator定义为半影
 	z = [ 0.D, 0.0, 1.0 ]
 	ilusrc = 'SUN'	; 光源
 	
