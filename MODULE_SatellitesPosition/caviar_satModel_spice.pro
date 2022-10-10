@@ -346,6 +346,8 @@ FUNCTION caviar_satModel_spice_dsk_getLimbPoints, spcID, satID, n_points, et, lt
   
   pvec = dblarr(3, MAXN)
   FOR i = 0, n_elements(tangts[0,*])-1 DO pvec[*,i] = rotate#tangts[*,i]
+  print, 'dsk_pvec = '
+  print, pvec
   
 	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
 	cspice_recrad, pvec, range, ra, dec
@@ -487,7 +489,7 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	radec2slcoord, rac, decc, sc, lc
 	
 	; 调用相关函数返回对应的边缘点
-	limb = caviar_satModel_spice_dsk_getLimbPoints(spcID, satID, n_points, et, ltime)
+	limb = caviar_satModel_spice_dsk_getLimbPoints(spcID, satID, 5, et, ltime)
 	term = caviar_satModel_spice_dsk_getTermPoints(spcID, satID, n_points, et, ltime)
   ;equa = caviar_satModel_spice_dsk_getEquaPoints(spcID, satID, n_points, et, ltime)
 	
