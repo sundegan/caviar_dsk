@@ -106,6 +106,8 @@ FUNCTION caviar_satModel_spice_getPoints, radius, tipm, npts, rho, rhoi
 	;	- range:一个双精度标量或具有N个元素的数组，描述了对应的位置与原点的距离
 	;	- ra:一个双精度标量或N个元素的数组,描述位置的赤经,单位为弧度
 	;	- dec:一个双精度标量或N个元素的数组,描述位置的纬经,单位为弧度
+	print, 'pvec_fnd = '
+	print, pvec_fnd
 	cspice_recrad, pvec_fnd, range, ra, dec
 		
 	; 椭圆边缘点从J2000(RA,dec)坐标转换为(sample,line)坐标
@@ -161,6 +163,8 @@ FUNCTION caviar_satModel_spice_ell_getLimbPoints, spcID, satID, n_points, et, lt
   
   pvec = dblarr(3, MAXN)
   FOR i = 0, n_elements(tangts[0,*])-1 DO pvec[*,i] = rotate#tangts[*,i]
+  print, 'pvec = '
+  print, pvec
   
 	; 将DSK模型边缘点（由航天器指向边缘点的切向量定义）从J2000(x,y,z)坐标转换为J2000(Ra,Dec)坐标
 	cspice_recrad, pvec, range, ra, dec
@@ -266,10 +270,10 @@ FUNCTION caviar_satModel_spice, satID, et, spcID, n_points, CENTER=center
   ;		- rhoi:将rho位置向量从J2000转为body-fixed参考系，同时将列向量转为行向量
   ; OUTPUT:{RA:ra, DEC:dec, SAMPLE:sample, LINE:line}
   ; TRANSPOSE对矩阵或数组进行转置,这里将列向量转为行向量,因为cspice_edlimb要求传入的是行向量(三维数组)
-  limb = caviar_satModel_spice_ell_getLimbPoints(spcID, satID, n_points, et, ltime)
-  ;limb = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, TRANSPOSE(tipm##rho))
-  term = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, TRANSPOSE(tipm##rho_sun))
-  equa = caviar_satModel_spice_getPoints(radii, tipm, n_points, rho, [0.0D, 0.0D, 300000.0D])
+  limb_test = caviar_satModel_spice_ell_getLimbPoints(spcID, satID, 5, et, ltime)
+  limb = caviar_satModel_spice_getPoints(radii, tipm, 5, rho, TRANSPOSE(tipm##rho))
+  term = caviar_satModel_spice_getPoints(radii, tipm, 5, rho, TRANSPOSE(tipm##rho_sun))
+  equa = caviar_satModel_spice_getPoints(radii, tipm, 5, rho, [0.0D, 0.0D, 300000.0D])
 
   ;# Compute limb center ra/dec & x/y position from rectangular coordinates (rho_center)
   ; 计算J2000三维直角坐标下物体中心的ra/dec和x/y位置（rho_center）
@@ -393,12 +397,6 @@ FUNCTION caviar_satModel_spice_dsk_getTermPoints, spcID, satID, n_points, et, lt
 
 	abcorr = 'CN+S'
 	corloc = 'CENTER'
-	
-;	cspice_spkpos, ilusrc, et, 'J2000', abcorr, target, pos, ltime
-;	dist   = norm(pos)
-;	schstp = 1.0d-1 / dist	; 搜索角度步长,大约对应100米的高度,以确保不会错过任何termnator
-;  soltol = 1.0d-3 / dist	; 收敛容差的高度设置为1米左右
-  
   schstp = 1.0d-4     ; 搜索角度步长,100微弧
   soltol = 1.0d-7     ; 收敛角度,100纳弧
 	ncuts  = n_points; 切割半平面的个数
@@ -490,12 +488,12 @@ FUNCTION caviar_satModel_spice_dsk, satID, et, spcID, n_points, CENTER=center
 	
 	; 调用相关函数返回对应的边缘点
 	limb = caviar_satModel_spice_dsk_getLimbPoints(spcID, satID, n_points, et, ltime)
-	;term = caviar_satModel_spice_dsk_getTermPoints(spcID, satID, n_points, et, ltime)
+	term = caviar_satModel_spice_dsk_getTermPoints(spcID, satID, n_points, et, ltime)
   ;equa = caviar_satModel_spice_dsk_getEquaPoints(spcID, satID, n_points, et, ltime)
 	
 	model = {npts: n_points, slCenter: [[sc],[lc]], rdCenter: [[rac],[decc]], $
     slLimb:[[limb.sample], [limb.line]], rdLimb:[[limb.ra], [limb.dec]], $
-    slTerm:[[0], [0]], rdTerm:[[0], [0]], $
+    slTerm:[[term.sample], [term.line]], rdTerm:[[term.ra], [term.dec]], $
     slEqua:[[0], [0]], rdEqua:[[0], [0]] $
   }
   
